@@ -24,9 +24,9 @@ fibs = zip [0..] fs
  - Takes in a list of indicies in increasing order and for every index gets the value of the
  - the fibonacci number (mod 10^8 + 7).
  -}
-repeatedFibs :: (Eq a) => [a] -> [(a, t)] -> [t]
-repeatedFibs [] _ = []
-repeatedFibs (x:xs) ((i, f):fs) = if x == i then f:(result xs fs) else (result (x:xs) fs)
+rFibs :: (Eq a) => [a] -> [(a, t)] -> [t]
+rFibs [] _ = []
+rFibs (x:xs) ((i, f):fs) = if x == i then f:(rFibs xs fs) else (rFibs (x:xs) fs)
 ---------------------------------------------------------------------------------------------------
 
 {-|
@@ -53,3 +53,16 @@ pascal = Vec.fromList (take 1001 (map Vec.fromList nCr))
 repeatedPascalValues :: [(Int, Int)] -> [Int]
 repeatedPascalValues = map (\(y, x) -> (pascal ! y) ! x)
 ---------------------------------------------------------------------------------------------------
+
+{-|
+ - Generates an infinite list of list of number of binary search trees. Weird
+ - [1], [1, 1], [2, 1, 1], [5, 2, 1, 1], [14, 5, 2, 1, 1] ......
+ - i.e. the first entry of the nth row will give the binary search trees that can exist for that
+ - n.
+ -}
+binarySearchTrees = iterate trees [1, 1]
+  where trees xs    = (foldr modadd 0 (zipWith modmult xs (reverse xs))) : xs
+        modadd x y = modl (modl x + modl y)
+        modmult x y = modl (modl x * modl y)
+        modl x = mod x (10^8 + 7)
+
