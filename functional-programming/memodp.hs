@@ -16,17 +16,17 @@ pentagonal n = n * (3 * n - 1) `div` 2
  -}
 fibs :: [(Int, Int)]
 fibs = zip [0..] fs
-    where
-        fs     = 0:1:zipWith (\x y -> modl (modl x + modl y)) fs (tail fs)
-        modl x = mod x (10^8 + 7)
+  where
+    fs     = 0 : 1 : zipWith (\x y -> modl (modl x + modl y)) fs (tail fs)
+    modl x = mod x (10^8 + 7)
 
 {-|
  - Takes in a list of indicies in increasing order and for every index gets the value of the
  - the fibonacci number (mod 10^8 + 7).
  -}
 rFibs :: (Eq a) => [a] -> [(a, t)] -> [t]
-rFibs [] _ = []
-rFibs (x:xs) ((i, f):fs) = if x == i then f:(rFibs xs fs) else (rFibs (x:xs) fs)
+rFibs [] _               = []
+rFibs (x:xs) ((i, f):fs) = if x == i then f : rFibs xs fs else rFibs (x:xs) fs
 ---------------------------------------------------------------------------------------------------
 
 {-|
@@ -39,12 +39,12 @@ rFibs (x:xs) ((i, f):fs) = if x == i then f:(rFibs xs fs) else (rFibs (x:xs) fs)
  - .....
  -}
 pascal :: Vec.Vector (Vec.Vector Int)
-pascal = Vec.fromList (take 1001 (map Vec.fromList nCr))
+pascal = Vec.fromList $ take 1001 $ map Vec.fromList nCr
   where
     modl x          = mod x (10^8+7)
-    nCr             = [1, 0]:[1, 1, 0]:map (\x -> 1:nVec x) (tail nCr)
+    nCr             = [1, 0] : [1, 1, 0] : map (\x -> 1:nVec x) (tail nCr)
     nVec [0]        = [0]
-    nVec (y1:y2:ys) = (modl (modl y1 + modl y2)) : nVec (y2:ys)
+    nVec (y1:y2:ys) = modl (modl y1 + modl y2) : nVec (y2:ys)
 
 {-|
  - Takes a list of (row, col) indices and returns a list with the pascal triangle
@@ -61,8 +61,9 @@ repeatedPascalValues = map (\(y, x) -> (pascal ! y) ! x)
  - n.
  -}
 binarySearchTrees = iterate trees [1, 1]
-  where trees xs    = (foldr modadd 0 (zipWith modmult xs (reverse xs))) : xs
-        modadd x y = modl (modl x + modl y)
-        modmult x y = modl (modl x * modl y)
-        modl x = mod x (10^8 + 7)
+  where
+    trees xs    = foldr modadd 0 (zipWith modmult xs (reverse xs)) : xs
+    modadd x y  = modl (modl x + modl y)
+    modmult x y = modl (modl x * modl y)
+    modl x      = mod x (10^8 + 7)
 

@@ -40,21 +40,19 @@ createList :: Int -> [Int]
 createList n = [1..n]
 ---------------------------------------------------------------------------------------------------
 
-{-| Ineffeciently reverse a list -}
+{-| Reverse a list -}
 reverse' :: [a] -> [a]
-reverse' [] = []
-reverse' (x:xs) = reverse' xs ++ [x]
+reverse' = foldl (flip (:)) []
 ---------------------------------------------------------------------------------------------------
 
 {-| Sum of all the odd integers -}
 sumOdds :: [Integer] -> Integer
-sumOdds = sum . (filter (\x -> x `mod` 2 == 1))
+sumOdds = sum . filter (\x -> x `mod` 2 == 1)
 ---------------------------------------------------------------------------------------------------
 
 {-| length of a list -}
 length' :: [a] -> Int
-length' [] = 0
-length' (x:xs) = 1 + length' xs
+length' = foldr (\x -> (+) 1) 0
 ---------------------------------------------------------------------------------------------------
 
 {-| absoultify the list (i.e make everything absolute) -}
@@ -62,11 +60,13 @@ absolutify :: [Integer] -> [Integer]
 absolutify = map abs
 ---------------------------------------------------------------------------------------------------
 
-{-| calculate e^x i.e. 1 + e + e^2/2! + e^3/3! + ..... -}
+{-|
+ - calculate c^x i.e. 1 + c + c^2/2! + c^3/3! + .....
+ - where c is the supplied number
+ -}
 powere :: Double -> Double
-powere x = sum (map (\y -> x**y / factorial y) [0..9])
-    where factorial 0 = 1
-          factorial n = n * factorial (n - 1)
+powere x = sum $ map (\y -> x**y / factorial y) [0..9]
+    where factorial n = product [1..n]
 ---------------------------------------------------------------------------------------------------
 
 {-|
@@ -86,14 +86,14 @@ powere x = sum (map (\y -> x**y / factorial y) [0..9])
  -}
 solve :: Int -> Int -> [Int] -> [Int] -> [Double]
 solve l r a b =
-  [ (solveArea (fromIntegral l) (fromIntegral r) a b) / 1000
-  , (solveVol (fromIntegral l) (fromIntegral r) a b) / 1000
+  [ solveArea (fromIntegral l) (fromIntegral r) a b / 1000
+  , solveVol (fromIntegral l) (fromIntegral r) a b / 1000
   ]
   where
     y [] [] x         = 0.0
-    y (a:as) (b:bs) x = (fromIntegral a) * (x^^b) + y as bs x
-    solveArea l r a b = foldl (+) 0.0 (map (y a b) [l,l+0.001..r])
-    solveVol l r a b  = foldl (+) 0.0 (map (\x -> pi * (y a b x)^2) [l,l+0.001..r])
+    y (a:as) (b:bs) x = fromIntegral a * (x^^b) + y as bs x
+    solveArea l r a b = foldl (+) 0.0 $ map (y a b) [l, l + 0.001..r]
+    solveVol l r a b  = foldl (+) 0.0 $ map (\x -> pi * y a b x ^ 2) [l, l + 0.001..r]
 ---------------------------------------------------------------------------------------------------
 
 -- LAMBDA CALCULS: REDUCTIONS
@@ -124,7 +124,7 @@ solve l r a b =
  - Checks if a given list of values i.e. x-coord and y-coord are the input and output
  - respectively of a mathemetical function
  -}
-isFunction :: (Ord a, Ord b, Num a, Num b) => [(a, b)] -> [Char]
+isFunction :: (Ord a, Ord b, Num a, Num b) => [(a, b)] -> String
 isFunction xs = duplicateY (List.sort xs) (501, 501)
   where
     -- x_1 == x_0 and y_1 /= y_0
@@ -141,17 +141,15 @@ isFunction xs = duplicateY (List.sort xs) (501, 501)
  - perimeter of the ploygon whose verticies are given in order
  -}
 perimeter :: (Integral a, Integral b, Floating c) => [(a, b)] -> c
-perimeter lst = foldl (+) 0.0 (zipWith distance lst (tail (cycle lst)))
-  where
-    distance (x1, y1) (x2, y2) = sqrt ((fromIntegral (x2 - x1))^2 + (fromIntegral (y2 - y1))^2)
+perimeter lst = foldl (+) 0.0 $ zipWith distance lst $ tail $ cycle lst
+  where distance (x1, y1) (x2, y2) = sqrt $ fromIntegral (x2 - x1)^2 + fromIntegral (y2 - y1)^2
 ---------------------------------------------------------------------------------------------------
 
 {-|
  - Area of the ploygon whose verticies are given in order
  -}
 area :: (Integral a, Fractional b) => [(a, a)] -> b
-area lst = abs (foldl (+) 0.0 (zipWith xysum lst (tail (cycle lst))))
-  where
-    xysum (x1, y1) (x2, y2) = (fromIntegral ((x1 * y2) - (x2 * y1))) / 2
+area lst = abs $ foldl (+) 0.0 $ zipWith xysum lst $ tail $ cycle lst
+  where xysum (x1, y1) (x2, y2) = fromIntegral ((x1 * y2) - (x2 * y1)) / 2
 ---------------------------------------------------------------------------------------------------
  

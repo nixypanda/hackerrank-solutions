@@ -55,7 +55,6 @@ spnsk n rows
           triangle n  = replicate n '1' : map (ubars 1) (triangle (n - 2))
 
 -- sierpinski n rows = (putStr . unlines . reverse) (spnsk (n + 1) rows)
-
 ---------------------------------------------------------------------------------------------------
 
 {-| mingle together multiple strings -}
@@ -108,7 +107,7 @@ grahamScan pts
           rests                          = tail (sortBy (compare `on` compkey p0) pts)
           ccw (ax, ay) (bx, by) (cx, cy) = compare ((bx - ax) * (cy - ay)) ((cx - ax) * (by - ay))
           scan xs [z]                    = z : xs
-          scan [p0] (p1:ps)              | ccw (last ps) p0 p1 == EQ = [(last ps), p0]
+          scan [p0] (p1:ps)              | ccw (last ps) p0 p1 == EQ = [last ps, p0]
           scan (x : xs) (y : z : rsts)   = case ccw x y z of
                                               LT -> scan xs (x:z:rsts)
                                               EQ -> scan (x:xs) (z:rsts) -- skip collinear points
@@ -125,9 +124,8 @@ reduction :: (Ord a) => Set.Set a -> [a] -> [a]
 reduction seen []     = []
 reduction seen (x:xs) =
   if x `Set.member` seen
-  then (reduction seen xs)
-  else x:(reduction (x `Set.insert` seen) xs)
-
+  then reduction seen xs
+  else x : reduction (x `Set.insert` seen) xs
 ---------------------------------------------------------------------------------------------------
 
 {-|
@@ -141,23 +139,21 @@ filterListGTk (xs, k) =
     else reduction Set.empty filterd
     where mapF    = Map.fromListWith (+) [(x, 1) | x <- xs]
           filterd = filter (\x -> maybe False (>= k) (Map.lookup x mapF)) xs
-
 ---------------------------------------------------------------------------------------------------
 
 {-|
  - Returns the number of unique ways we can get n by adding kth powers of natural numbers.
  -}
 sumOfPows :: (Ord a, Num a, Enum a, Integral b) => a -> b -> Int
-sumOfPows n k = length (filter (\x -> (sum x) == n) (pset n 0 (takeWhile (<= n) (map (^k) [1..]))))
+sumOfPows n k = length $ filter (\x -> sum x == n) $ pset n 0 $ takeWhile (<= n) $ map (^k) [1..]
   where
     -- returns the pset of xs | sum xs < n (reduces the search space by quite a lot)
     pset n s [] = [[]]
     pset n s (x:xs)
       | s + x > n = pset n s xs
-      | otherwise = (pset n s xs) ++ map (x:) (pset n (s + x) xs)
-    
-
+      | otherwise = pset n s xs ++ map (x:) (pset n (s + x) xs)
 ---------------------------------------------------------------------------------------------------
+
 {-|
  - Returns super digit of a number 
  - We define super digit of an integer x using the following rules:
@@ -167,8 +163,9 @@ sumOfPows n k = length (filter (\x -> (sum x) == n) (pset n 0 (takeWhile (<= n) 
  - digit-sum of a number is defined as the sum of its digits.
  -}
 kSuperDigit :: String -> Int -> Int
-kSuperDigit n k = (superDigit . show) (k * superDigit n)
+kSuperDigit n k = superDigit . show $ k * superDigit n
   where
     superDigit [a] = Char.digitToInt a
-    superDigit xs  = superDigit . show . sum $ (map Char.digitToInt xs)
+    superDigit xs  = superDigit . show . sum $ map Char.digitToInt xs
+---------------------------------------------------------------------------------------------------
 

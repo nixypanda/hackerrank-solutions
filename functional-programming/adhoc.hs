@@ -7,7 +7,7 @@ import qualified Data.Set as Set
  -}
 rotations :: [a] -> [[a]]
 rotations xs = [ rotate i xs | i <- [1..(length xs)] ]
-    where rotate n ys = take (length ys) (drop n (cycle ys))
+    where rotate n ys = take (length ys) $ drop n (cycle ys)
 ---------------------------------------------------------------------------------------------------
 
 {-|
@@ -18,8 +18,8 @@ reduction :: (Ord a) => Set.Set a -> [a] -> [a]
 reduction seen []     = []
 reduction seen (x:xs) =
   if Set.member x seen
-  then (reduction seen xs)
-  else x:(reduction (Set.insert x seen) xs)
+  then reduction seen xs
+  else x : reduction (Set.insert x seen) xs
 
 ---------------------------------------------------------------------------------------------------
 

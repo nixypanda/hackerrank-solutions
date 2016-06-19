@@ -17,7 +17,7 @@ arrSum = sum
 
 {-| Differance of the sum of diagonals of a matrix -}
 diagonalDiff :: (Num a) => [[a]] -> a
-diagonalDiff xs = abs (sum (primary xs) - sum (secondary xs))
+diagonalDiff xs = abs $ sum (primary xs) - sum (secondary xs)
   where
     -- the primary diagonal
     primary []     = []

@@ -8,7 +8,7 @@
  - Finds out if the professor gets angry enough to cancel the class?
  - He gets angry if less than k student reach on time. <=0 => before/on Time
  -}
-isProfAngry :: (Ord a, Num a) => [a] -> Int -> [Char]
+isProfAngry :: (Ord a, Num a) => [a] -> Int -> String
 isProfAngry arr k = if length (filter (<= 0) arr) < k then "YES" else "NO"
 ---------------------------------------------------------------------------------------------------
 
@@ -34,11 +34,11 @@ largestDecent len = head (map fivesAndThrees tees)
  -}
 utopHeight :: (Integral a, Integral b) => a -> b
 utopHeight 0 = 1
-utopHeight n = if n `mod` 2 /= 0 then 2 * (utopHeight (n - 1)) else (utopHeight (n - 1)) + 1
+utopHeight n = if n `mod` 2 /= 0 then 2 * utopHeight (n - 1) else utopHeight (n - 1) + 1
 ---------------------------------------------------------------------------------------------------
 
 {-| Digits that make up n and also evenly divide it.  -}
-evenDivisors num = reverse (filter (\x -> x /= 0 && num `mod` x == 0) (digs num))
+evenDivisors num = reverse $ filter (\x -> x /= 0 && num `mod` x == 0) (digs num)
   where
     digs 0 = []
     digs n = (n `mod` 10) : digs (n `div` 10)
@@ -53,7 +53,7 @@ squares lo hi = floor (hi**(1.0/2.0)) - ceiling (lo**(1.0/2.0)) + 1
  - width : the width of all the service lane points
  - start to end the points between which we check vechicale we can squeeze.
  -}
-vechile width start end = minimum (take (end - start + 1) (drop start width))
+vechile width start end = minimum $ take (end - start + 1) (drop start width)
 ---------------------------------------------------------------------------------------------------
 
 {-|
@@ -67,7 +67,7 @@ vechile width start end = minimum (take (end - start + 1) (drop start width))
  -}
 cut [] = []
 cut array = length cutof : cut cutof
-  where cutof = filter (\x -> x /= 0) [x - (minimum array) | x <- array]
+  where cutof = filter (/= 0) [x - minimum array | x <- array]
 ---------------------------------------------------------------------------------------------------
 
 {-|
@@ -77,7 +77,7 @@ cut array = length cutof : cut cutof
  -}
 -- get the initial number of choclates and then get how many
 -- one can by using wrappers
-choclates n c m = canBuy + (fromwraps canBuy m)
+choclates n c m = canBuy + fromwraps canBuy m
   where
     canBuy = n `div` c
     -- recursivly get choclates until can't get anymore
@@ -86,6 +86,6 @@ choclates n c m = canBuy + (fromwraps canBuy m)
       | ws == mws = 1
       -- wrappers / (minimum wrappers) to get choclates
       -- then add the new wrappers to the remaining ones and ask for choclates again
-      | otherwise = chocs + (fromwraps ((ws `mod` mws) + chocs) mws) where chocs = ws `div` mws
+      | otherwise = chocs + fromwraps ((ws `mod` mws) + chocs) mws where chocs = ws `div` mws
 ---------------------------------------------------------------------------------------------------
 
