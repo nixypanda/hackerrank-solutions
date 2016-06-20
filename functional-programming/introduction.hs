@@ -140,7 +140,7 @@ isFunction xs = duplicateY (List.sort xs) (501, 501)
 {-|
  - perimeter of the ploygon whose verticies are given in order
  -}
-perimeter :: (Integral a, Integral b, Floating c) => [(a, b)] -> c
+perimeter :: (Integral a, Floating c) => [(a, a)] -> c
 perimeter lst = foldl (+) 0.0 $ zipWith distance lst $ tail $ cycle lst
   where distance (x1, y1) (x2, y2) = sqrt $ fromIntegral (x2 - x1)^2 + fromIntegral (y2 - y1)^2
 ---------------------------------------------------------------------------------------------------
