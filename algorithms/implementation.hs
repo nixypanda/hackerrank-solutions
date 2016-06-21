@@ -2,22 +2,40 @@
  - Solutions to implementation challanges in algorithms track on hacker-rank.
  -}
 
+-- qualified imports
 import qualified Data.List as List
 import qualified Data.ByteString as ByteStr
 import qualified Data.ByteString.Char8 as ByteStrCh
 import qualified Data.Vector as Vec
-import Data.Vector ((!))
 import qualified Data.Char as Ch
+import qualified Data.Bits as Bits
+
+-- operator imports
+import Data.Vector ((!))
+import Data.Bits ((.|.))
 
 -- GENERAL HELPERS --------------------------------------------------------------------------------
 
 {-|
- - Cheates chunks of size k for the given list
+ - Creates chunks of size k for the given list
  - e.g. chunksOf 2 [1..5] = [[1, 2], [3, 4], [5]]
  -}
 chunksOf :: Int -> [a] -> [[a]]
 chunksOf _ [] = []
 chunksOf k xs = ys : chunksOf k zs where (ys, zs) = splitAt k xs
+
+{-|
+ - Takes a list a generates all internally possible pairs.
+ -}
+pairs :: [a] -> [(a, a)]
+pairs []     = []
+pairs (x:xs) = map (\y -> (x, y)) xs ++ pairs xs
+
+{-|
+ - Convertes a string of 0'a or (inclusive) 1's to a valid Integer value
+ -}
+toDec :: String -> Integer
+toDec = List.foldl' (\acc x -> acc * 2 + fromIntegral (Ch.digitToInt x)) 0
 
 
 -- IS THE PROFESSOR ANGRY -------------------------------------------------------------------------
@@ -62,6 +80,7 @@ utopHeight n = if n `mod` 2 /= 0 then 2 * utopHeight (n - 1) else utopHeight (n 
 -- EVEN DIVISORS OF A NUMBER ----------------------------------------------------------------------
 
 {-| Digits that make up n and also evenly divide it.  -}
+evenDivisors :: Integral a => a -> [a]
 evenDivisors num = reverse $ filter (\x -> x /= 0 && num `mod` x == 0) (digs num)
   where
     digs 0 = []
@@ -71,6 +90,7 @@ evenDivisors num = reverse $ filter (\x -> x /= 0 && num `mod` x == 0) (digs num
 -- SHERLOCK AND SQUARES ---------------------------------------------------------------------------
 
 {-| Number of squares in a given limit -}
+squares :: (RealFrac a, Floating a, Integral b) => a -> a -> b
 squares lo hi = floor (hi**(1.0/2.0)) - ceiling (lo**(1.0/2.0)) + 1
 
 
@@ -81,6 +101,7 @@ squares lo hi = floor (hi**(1.0/2.0)) - ceiling (lo**(1.0/2.0)) + 1
  - width : the width of all the service lane points
  - start to end the points between which we check vechicale we can squeeze.
  -}
+vechile :: (Ord a) => [a] -> Int -> Int -> a
 vechile width start end = minimum $ take (end - start + 1) (drop start width)
 
 
@@ -95,6 +116,7 @@ vechile width start end = minimum $ take (end - start + 1) (drop start width)
  - next cut operation four sticks are left (of non-zero length), whose lengths are the following: 
  - 3 2 2 6
  -}
+cut :: (Ord a, Num a) => [a] -> [Int]
 cut [] = []
 cut array = length cutof : cut cutof
   where cutof = filter (/= 0) [x - minimum array | x <- array]
@@ -109,7 +131,8 @@ cut array = length cutof : cut cutof
  -}
 -- get the initial number of choclates and then get how many
 -- one can by using wrappers
-choclates n c m = canBuy + fromwraps canBuy m
+chocolates :: (Integral a) => a -> a -> a -> a
+chocolates n c m = canBuy + fromwraps canBuy m
   where
     canBuy = n `div` c
     -- recursivly get choclates until can't get anymore
@@ -174,12 +197,12 @@ cavityMap lx@(x:xs) = x : gridCavities 1 xs
   where
     -- creating a 2-d vector for fast value lookups
     grid :: Vec.Vector (Vec.Vector Int)
-    grid = Vec.fromList $ map (Vec.fromList . (map Ch.digitToInt)) lx
+    grid = Vec.fromList $ map (Vec.fromList . map Ch.digitToInt) lx
 
     -- check if the given location is a cavit or not i.e. it's depth is strictly greater than
     -- the depth of the adjacent cells.
     isCavity :: Int -> Int -> Bool
-    isCavity y x = ((grid!y)!x) > (maximum $ prev : next : same)
+    isCavity y x = ((grid!y)!x) > maximum (prev : next : same)
       where
         prev = grid ! (y - 1) ! x
         same = [p ! (x - 1), p ! (x + 1)] where p = grid ! y
@@ -195,7 +218,7 @@ cavityMap lx@(x:xs) = x : gridCavities 1 xs
     gridCavities :: Int -> [String] -> [String]
     gridCavities _ [] = []
     gridCavities _ [y] = [y]
-    gridCavities r (y:ys) = ((head y) : rowWithCavities r 1 (tail y)) : gridCavities (r + 1) ys
+    gridCavities r (y:ys) = (head y : rowWithCavities r 1 (tail y)) : gridCavities (r + 1) ys
 
 
 -- CEASAR CIPHER ----------------------------------------------------------------------------------
@@ -235,3 +258,145 @@ fine (ed, em, ey) (ad, am, ay) = if sum fines < 0 || null filterd then 0 else he
     fines   = [10000 * signum (ay - ey), 500 * (am - em) , 15 * (ad - ed)]
     filterd = filter (> 0) fines
 
+-- MANASA AND STONES ------------------------------------------------------------------------------
+
+{-|
+ - Manasa is out on a hike with friends. She finds a trail of stones with numbers on them. She
+ - starts following the trail and notices that two consecutive stones have a difference of either a
+ - or b. Legend has it that there is a treasure trove at the end of the trail and if Manasa can
+ - guess the value of the last stone, the treasure would be hers. Given that the number on the
+ - first stone was 0, find all the possible values for the number on the last stone.
+ -
+ - Note: The numbers on the stones are in increasing order.
+ -}
+stones :: (Ord a, Num a) => a -> a -> a -> [a]
+stones n a b =
+  if lo == hi
+  then [(n - 1) * lo]
+  else takeWhile (<= (n - 1) * hi) $ scanl (\acc x -> acc - lo + hi) ((n - 1) * lo) [1..]
+    where
+      lo = min a b
+      hi = max a b
+
+
+-- ACM ICPC TEAM ----------------------------------------------------------------------------------
+
+{-|
+ - You are given a list of N people who are attending ACM-ICPC World Finals. Each of them are
+ - either well versed in a topic or they are not. Find out the maximum number of topics a 2-person
+ - team can know. And also find out how many teams can know that maximum number of topics.
+ -
+ - Note Suppose a, b, and c are three different people, then (a,b) and (b,c) are counted as two
+ - different teams.
+ -}
+
+acmicpcTeam :: [String] -> (Int, Int)
+acmicpcTeam xs = (maximum teamKnowHow, length $ filter (== maximum teamKnowHow) teamKnowHow)
+  where teamKnowHow = map (\(x, y) -> Bits.popCount (x .|. y)) . pairs $ map toDec xs
+
+-- EXTRA LONG FACTORIALS --------------------------------------------------------------------------
+
+{-| Given a number n return it's factorial -}
+factorial :: Integer -> Integer
+factorial n = product [1..n]
+
+
+-- TAUM AND B'DAY ---------------------------------------------------------------------------------
+
+{-|
+ - Taum is planning to celebrate the birthday of his friend, Diksha. There are two types of
+ - gifts that Diksha wants from Taum: one is black and the other is white. To make her happy,
+ - Taum has to buy  number of black gifts and  number of white gifts.
+ -
+ - The cost of each black gift is pb units.
+ - The cost of every white gift is pw units.
+ - The cost of converting each black gift into white gift or vice versa is pc units.
+ - Help Taum by deducing the minimum amount he needs to spend on Diksha's gifts.
+ -}
+price :: (Ord a, Num a) => a -> a -> a -> a -> a -> a
+price w b pw pb pc = minimum [w * pw + b * pb, w * (pb + pc) + b * pb, w * pw + b * (pw + pc)]
+
+
+-- TIME IN WORDS ----------------------------------------------------------------------------------
+
+{-|
+ - Given time in numbers conver it to words.
+ - e.g 5:00 -> 5 o' clock
+ -}
+inWords :: Int -> Int -> String
+inWords h m
+    | m == 0  = lookup !! h ++ " o' clock"
+    | m == 1  = lookup !! m ++ " minute past " ++ lookup !! h
+    | m == 15 = "quarter past " ++ lookup !! h
+    | m == 30 = "half past " ++ lookup !! h
+    | m == 45 = "quarter to " ++ lookup !! ((h + 1) `mod` 24)
+    | m == 59 = "one minute to " ++ lookup !! ((h + 1) `mod` 24)
+    | m < 30  = lookup !! m ++ " minutes past " ++ lookup !! h
+    | m < 59  = lookup !! (60 - m) ++ " minutes to " ++ lookup !! ((h + 1) `mod` 24)
+    where
+        lookup = [ "zero"
+                 , "one"
+                 , "two"
+                 , "three"
+                 , "four"
+                 , "five"
+                 , "six"
+                 , "seven"
+                 , "eight"
+                 , "nine"
+                 , "ten"
+                 , "eleven"
+                 , "twelve"
+                 , "thirteen"
+                 , "fourteen"
+                 , "fifteen"
+                 , "sixteen"
+                 , "seventeen"
+                 , "eighteen"
+                 , "ninteen"
+                 , "twenty"
+                 , "twenty one"
+                 , "twenty two"
+                 , "twenty three"
+                 , "twenty four"
+                 , "twenty five"
+                 , "twenty six"
+                 , "twenty seven"
+                 , "twenty eight"
+                 , "twenty nine"
+                 ]
+
+
+-- MODIFIED KAPREKAR ------------------------------------------------------------------------------
+
+{-|
+ - A modified Kaprekar number is a positive whole number  with  digits, such that when we split
+ - its square into two pieces - a right hand piece  with d digits and a left hand piece that
+ - contains the remaining d-1 digits, the sum of the pieces is equal to the original number
+ -
+ - Here's an explanation from Wikipedia about the ORIGINAL Kaprekar Number (spot the difference!)
+ - In mathematics, a Kaprekar number for a given base is a non-negative integer, the
+ - representation of whose square in that base can be split into two parts that add up to the
+ - original number again. For instance, 45 is a Kaprekar number, because 45² = 2025 and 20+25 = 45
+ -}
+
+modifiedKaprekar :: [Integer]
+modifiedKaprekar = filter isKaprekar [1..]
+  where
+    isKaprekar n = nSquare `div` split + nSquare `mod` split == n
+      where
+        nSquare = toInteger n * n
+        split = 10 ^ (ceiling (1.000001 + logBase 10 (fromIntegral nSquare)) `div` 2) :: Integer
+
+
+-- ENCRYPTION -------------------------------------------------------------------------------------
+
+{-|
+ - Encrypt english text by making a grid of it out of it of sqrt(l) length then reading
+ - it column by column.
+ -}
+encryption :: String -> [String]
+encryption s = List.transpose $ chunksOf n s where n = ceiling $ sqrt $ fromIntegral $ length s
+
+
+---------------------------------------------------------------------------------------------------
