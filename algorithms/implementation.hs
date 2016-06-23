@@ -14,6 +14,7 @@ import qualified Data.Bits as Bits
 import Data.Vector ((!))
 import Data.Bits ((.|.))
 
+
 -- GENERAL HELPERS --------------------------------------------------------------------------------
 
 {-|
@@ -24,6 +25,7 @@ chunksOf :: Int -> [a] -> [[a]]
 chunksOf _ [] = []
 chunksOf k xs = ys : chunksOf k zs where (ys, zs) = splitAt k xs
 
+
 {-|
  - Takes a list a generates all internally possible pairs.
  -}
@@ -31,11 +33,46 @@ pairs :: [a] -> [(a, a)]
 pairs []     = []
 pairs (x:xs) = map (\y -> (x, y)) xs ++ pairs xs
 
+
 {-|
  - Convertes a string of 0'a or (inclusive) 1's to a valid Integer value
  -}
 toDec :: String -> Integer
 toDec = List.foldl' (\acc x -> acc * 2 + fromIntegral (Ch.digitToInt x)) 0
+
+
+{-
+ - Count the number of split inversions between two sorted arrays. Tracking the
+ - current length of xs as (length xs) would mean linear time operation leading
+ - to a quadratic merge.
+ -}
+splitInvs :: (Ord a) => Integer -> [a] -> [a] -> ([a], Integer)
+splitInvs lxs [] [] = ([], 0)
+splitInvs lxs xs [] = (xs, 0)
+splitInvs lxs [] ys = (ys, 0)
+splitInvs lxs (x:xs) (y:ys)
+  | x < y     = (x:rxs, srxs)
+  | x > y     = (y:rys, lxs + srys)
+  | otherwise = (x:y:rxy, srxy)
+    where
+      (rxs, srxs) = splitInvs (lxs - 1) xs (y:ys)
+      (rys, srys) = splitInvs lxs (x:xs) ys
+      (rxy, srxy) = splitInvs (lxs - 1) xs ys
+
+{-
+ - Count the total number of inversions in a given array
+ -}
+inversionCount :: (Ord a) => [a] -> ([a], Integer)
+inversionCount []  = ([], 0)
+inversionCount [x] = ([x], 0)
+inversionCount zs  = (szs, nxs + nys + nzs)
+  where
+    half       = length zs `div` 2
+    xs         = take half zs
+    ys         = drop half zs
+    (sxs, nxs) = inversionCount xs
+    (sys, nys) = inversionCount ys
+    (szs, nzs) = splitInvs (fromIntegral half) sxs sys
 
 
 -- IS THE PROFESSOR ANGRY -------------------------------------------------------------------------
@@ -61,7 +98,7 @@ isProfAngry arr k = if length (filter (<= 0) arr) < k then "YES" else "NO"
 largestDecent :: Int -> String
 largestDecent len = head (map fivesAndThrees tees)
   where
-    tees = filter (\x -> (len - x) `mod` 3 == 0 && x `mod` 5 == 0) [0..(len + 1)]
+    tees             = filter (\x -> (len - x) `mod` 3 == 0 && x `mod` 5 == 0) [0..(len + 1)]
     fivesAndThrees t = concat (replicate (len - t) "5") ++ concat (replicate t "3")
 
 
@@ -210,14 +247,14 @@ cavityMap lx@(x:xs) = x : gridCavities 1 xs
 
     -- takes a row and returns a new one in which 'X' replaces the cavity spots in that row
     rowWithCavities:: Int -> Int -> String -> String
-    rowWithCavities _ _ [] = []
-    rowWithCavities _ _ [x] = [x]
+    rowWithCavities _ _ []     = []
+    rowWithCavities _ _ [x]    = [x]
     rowWithCavities r c (x:xs) = (if isCavity r c then 'X' else x) : rowWithCavities r (c + 1) xs
 
     -- finds all the cavities in a given grid
     gridCavities :: Int -> [String] -> [String]
-    gridCavities _ [] = []
-    gridCavities _ [y] = [y]
+    gridCavities _ []     = []
+    gridCavities _ [y]    = [y]
     gridCavities r (y:ys) = (head y : rowWithCavities r 1 (tail y)) : gridCavities (r + 1) ys
 
 
@@ -293,6 +330,7 @@ stones n a b =
 acmicpcTeam :: [String] -> (Int, Int)
 acmicpcTeam xs = (maximum teamKnowHow, length $ filter (== maximum teamKnowHow) teamKnowHow)
   where teamKnowHow = map (\(x, y) -> Bits.popCount (x .|. y)) . pairs $ map toDec xs
+
 
 -- EXTRA LONG FACTORIALS --------------------------------------------------------------------------
 
@@ -386,7 +424,7 @@ modifiedKaprekar = filter isKaprekar [1..]
     isKaprekar n = nSquare `div` split + nSquare `mod` split == n
       where
         nSquare = toInteger n * n
-        split = 10 ^ (ceiling (1.000001 + logBase 10 (fromIntegral nSquare)) `div` 2) :: Integer
+        split   = 10 ^ (ceiling (1.000001 + logBase 10 (fromIntegral nSquare)) `div` 2) :: Integer
 
 
 -- ENCRYPTION -------------------------------------------------------------------------------------
@@ -396,7 +434,47 @@ modifiedKaprekar = filter isKaprekar [1..]
  - it column by column.
  -}
 encryption :: String -> [String]
-encryption s = List.transpose $ chunksOf n s where n = ceiling $ sqrt $ fromIntegral $ length s
+encryption s = List.transpose $ chunksOf n s where n = (ceiling . sqrt) . fromIntegral $ length s
+
+
+-- LARRY'S ARRAY ----------------------------------------------------------------------------------
+
+{-
+ - Larray's has a permutation of N numbers A whose unique elements renge from 1 to N. He wants it
+ - to be sorted so delegates the task to his robot. The robot can perform the following operation
+ - as many times as it wants.
+ -
+ - Choose any  consecutive indices and rotate their elements:
+ - e.g. ABC -> BCA -> CAB ..
+ -
+ - Given an array check if the robot can sort it or not.
+ -}
+canRobotSort :: (Ord a) => [a] -> Bool
+canRobotSort xs = snd (inversionCount xs) `mod` 2 == 0
+
+
+-- NEW YEAR CHAOS ---------------------------------------------------------------------------------
+
+{-|
+ - It's New Year's Day and everyone's in line for the Wonderland rollercoaster ride!
+ -
+ - There are n people queued up, and each person wears a sticker indicating their initial position
+ - in the queue (i.e.:1, 2...  with the first number denoting the frontmost position).
+ -
+ - Any person in the queue can bribe the person directly in front of them to swap positions. If
+ - two people swap positions, they still wear the same sticker denoting their original place in
+ - line. One person can bribe at most two other persons.
+ -
+ - That is to say, if n = 8 and Person 5  bribes Person 4 , the queue will look like this: .. 5, 4..
+ - Fascinated by this chaotic queue, you decide you must know the minimum number of bribes that
+ - took place to get the queue into its current state!
+ -}
+newYearChaos :: [Int] -> String
+newYearChaos q = if isTooChaotic 1 q then "Too chaotic" else show . snd $ inversionCount q
+  where
+    isTooChaotic :: Int -> [Int] -> Bool
+    isTooChaotic _ []     = False
+    isTooChaotic i (x:xs) = i - x < (-2) || isTooChaotic (i + 1) xs
 
 
 ---------------------------------------------------------------------------------------------------
