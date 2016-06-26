@@ -1,6 +1,6 @@
 {-
  - Solutions to implementation challanges in algorithms track on hacker-rank.
- -}
+ -} 
 
 -- qualified imports
 import qualified Data.List as List
@@ -21,6 +21,7 @@ import Data.Bits ((.|.))
  - Creates chunks of size k for the given list
  - e.g. chunksOf 2 [1..5] = [[1, 2], [3, 4], [5]]
  -}
+-- recursivly split at the specified chunk size.
 chunksOf :: Int -> [a] -> [[a]]
 chunksOf _ [] = []
 chunksOf k xs = ys : chunksOf k zs where (ys, zs) = splitAt k xs
@@ -29,6 +30,7 @@ chunksOf k xs = ys : chunksOf k zs where (ys, zs) = splitAt k xs
 {-|
  - Takes a list a generates all internally possible pairs.
  -}
+-- take an element and pair it with all others then recursivly do it with the remaining elements.
 pairs :: [a] -> [(a, a)]
 pairs []     = []
 pairs (x:xs) = map (\y -> (x, y)) xs ++ pairs xs
@@ -37,6 +39,7 @@ pairs (x:xs) = map (\y -> (x, y)) xs ++ pairs xs
 {-|
  - Convertes a string of 0'a or (inclusive) 1's to a valid Integer value
  -}
+-- summation of 2 ^ (location of bit from right) for all locations -> decimal value
 toDec :: String -> Integer
 toDec = List.foldl' (\acc x -> acc * 2 + fromIntegral (Ch.digitToInt x)) 0
 
@@ -46,6 +49,11 @@ toDec = List.foldl' (\acc x -> acc * 2 + fromIntegral (Ch.digitToInt x)) 0
  - current length of xs as (length xs) would mean linear time operation leading
  - to a quadratic merge.
  -}
+-- similar to the merge sub-routine but also returns the split inversion count along
+-- with the merged array.
+-- IDEA: the idea is that when copying over element from the right list, the element being
+-- copied over forms split inversions with all the remaining elements in the left list.
+-- lxs : maintains the length of the remaining xs
 splitInvs :: (Ord a) => Integer -> [a] -> [a] -> ([a], Integer)
 splitInvs lxs [] [] = ([], 0)
 splitInvs lxs xs [] = (xs, 0)
@@ -62,6 +70,8 @@ splitInvs lxs (x:xs) (y:ys)
 {-
  - Count the total number of inversions in a given array
  -}
+-- simply like the mergesort algorithm but also returns the addition of
+-- left half inversions count + right half inversions count + split inversion count.
 inversionCount :: (Ord a) => [a] -> ([a], Integer)
 inversionCount []  = ([], 0)
 inversionCount [x] = ([x], 0)
