@@ -2,12 +2,12 @@
 Me going through hackerrank problems
 
 ## Stats
-|----------------------|-------|--------|
+
 | SubDomain            | Total | Solved |
 |----------------------|-------|--------|
 | Warmup               |   7   |    7   |
 | Implementation       |  13   |   11   |
-| Strings              |  18   |    9   |
+| Strings              |  28   |   11   |
 | Sorting              |  20   |   12   |
 | Search               |  12   |    3   |
 | Graph Theory         |  39   |    5   |
@@ -16,6 +16,3 @@ Me going through hackerrank problems
 | Bit Manipulation     |  17   |    1   |
 | Game Theory          |  25   |    -   |
 | NP Complete          |   2   |    -   |
-|----------------------|-------|--------|
-| Total                | 240   |   51   |
-|----------------------|-------|--------|
