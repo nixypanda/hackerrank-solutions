@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -Wall #-}
-{-# OPTIONS_GHC -Werror #-}
+--{-# OPTIONS_GHC -Werror #-}
 
 
 module FunctionalStructures
@@ -13,7 +13,8 @@ module FunctionalStructures
 
 
 import Control.Monad
-  ( forM_
+  ( foldM
+  , forM_
   , liftM2
   , replicateM
   , when
@@ -21,10 +22,8 @@ import Control.Monad
 import Control.Monad.ST (ST, runST)
 import Data.List (sort)
 
--- import qualified Data.Char as C
--- import qualified Data.Array as A
-import qualified Data.Array.ST as ST
-import qualified Data.Array.MArray as MA
+import qualified Data.Vector.Unboxed as V
+import qualified Data.Vector.Unboxed.Mutable as MV
 
 
 -- GENERAL HELPERS --------------------------------------------------------------------------------
@@ -228,10 +227,10 @@ swapNodes a ks =
  -}
 mainSwapNodes :: IO ()
 mainSwapNodes = do
-    n <- readLn :: IO Int
-    a <- replicateM n (fmap ((\[x,y] -> (x, y)) . map read . words) getLine)
-    ks <- fmap (map read . lines) (getLine >> getContents)
-    putStr . unlines . map (unwords . map show) $ swapNodes a ks
+  n <- readLn :: IO Int
+  a <- replicateM n (fmap ((\[x,y] -> (x, y)) . map read . words) getLine)
+  ks <- fmap (map read . lines) (getLine >> getContents)
+  putStr . unlines . map (unwords . map show) $ swapNodes a ks
 
 
 -- Valid BST --------------------------------------------------------------------------------------
@@ -398,10 +397,9 @@ mainListsAndGCD = do
  - This implementation uses weighted quick union by size (without path compression).
  -}
 data UnionFind s = UnionFind
-  { ids :: ST.STUArray s Int Int
-  , szs :: ST.STUArray s Int Int
+  { ids :: MV.MVector s Int
+  , szs :: MV.MVector s Int
   }
-
 
 {-|
  - Initialize union-find data structure with n sites. 0 through (n - 1). Each site is initially in
@@ -411,8 +409,7 @@ data UnionFind s = UnionFind
 -- newArray: create array with the provided value (in every place).
 newUF :: Int -> ST s (UnionFind s)
 newUF n =
-  liftM2 UnionFind (MA.newListArray (0, n - 1) [0..(n - 1)]) (MA.newArray (0, n - 1) 1)
-
+  liftM2 UnionFind (V.thaw $ V.fromList [0..n - 1]) (MV.replicate n 0)
 
 {-|
  - Returns the component identifier for the component containing the passed site.
@@ -421,7 +418,8 @@ newUF n =
 -- follow through the nodes until root is found
 find :: UnionFind s -> Int -> ST s Int
 find uf p =
-  MA.readArray (ids uf) p >>= (\i -> if i /= p then find uf i else return i)
+  MV.read (ids uf) p >>= (\i -> if i /= p then find uf i else return i)
+
 
 {-|
  - checks if the given two sites are in the same component.
@@ -430,6 +428,7 @@ find uf p =
 connected :: UnionFind s -> Int -> Int -> ST s Bool
 connected uf p q =
   liftM2 (==) (find uf p) (find uf q)
+
 
 {-|
  - Merges the component containing component containing the site p(or q) with the component
@@ -443,18 +442,19 @@ union uf p q = do
   -- if they are same do nothing
   when (rootP /= rootQ) $ do
     -- otherwise get size of both the roots
-    szP <- MA.readArray (szs uf) rootP
-    szQ <- MA.readArray (szs uf) rootQ
+    szP <- MV.read (szs uf) rootP
+    szQ <- MV.read (szs uf) rootQ
     -- merge the smaller into the larger
     if szP < szQ
       then do
-        MA.writeArray (ids uf) rootP rootQ
-        MA.writeArray (szs uf) rootP 0
-        MA.writeArray (szs uf) rootQ (szP + szQ)
+        MV.write (ids uf) rootP rootQ
+        MV.write (szs uf) rootP 0
+        MV.write (szs uf) rootQ (szP + szQ)
       else do
-        MA.writeArray (ids uf) rootQ rootP
-        MA.writeArray (szs uf) rootQ 0
-        MA.writeArray (szs uf) rootP (szP + szQ)
+        MV.write (ids uf) rootQ rootP
+        MV.write (szs uf) rootQ 0
+        MV.write (szs uf) rootP (szP + szQ)
+
 
 {-|
  - Given an integer n and a list of tuples creates a union-find data structure of size n and
@@ -466,7 +466,7 @@ ufing n xs = runST $ do
   uf <- newUF n
   -- subtract one as arays are zero indexed.
   forM_ (map (\(x, y) -> (x - 1, y - 1)) xs) (uncurry (union uf))
-  MA.getElems $ szs uf
+  fmap V.toList (V.freeze $ szs uf)
 
 
 {-|
@@ -525,8 +525,113 @@ mainPrissonTransport = do
 
 
 -- SUBSTRING SEARCH -------------------------------------------------------------------------------
+  
+{-|
+ - foreachWith takes a list, and a value that can be modified by the function, and
+ - it returns the modified value after mapping the function over the list.  
+ -}
+foreachWith :: (Foldable t, Monad m) => t a -> b -> (a -> b -> m b) -> m b
+foreachWith xs v f =
+  foldM (flip f) v xs
 
--- TODO
+
+{-|
+ - It is a helper function that takes in a char vector and a mutable vector and two indices
+ - where i represents the present index for which we are serching the jump value and j which
+ - represents the value we will use to fill the jump val.
+ -
+ - if the value at both places is the same then whenever we see the pattern we can safely
+ - go to the next index w.r.t j as the rest is the prefix that will already be matched
+ - abcdax   jmp[i] can be 1.
+ - ^   ^ -> 
+ - j   i    
+ - if pat[j] == pat[i] then jmp[i] = j + 1; i++; j++
+ -
+ - if pat[j] /= pat[i] then we need to start from the top.
+ - if j == 0 then jmp[i] = 0; i++
+ -
+ - if all else fails we will look for the value at one less.
+ - otherwise = j = jmp[j - 1]
+ -}
+searchUntil :: V.Vector Char -> MV.MVector s Int -> Int -> Int -> ST s Int
+searchUntil pat mv i j
+  | pat V.! j == pat V.! i = MV.write mv i (j + 1) >> return (j + 1)
+  | j == 0 = MV.write mv i 0 >> return j
+  | otherwise = MV.read mv (j - 1) >>= searchUntil pat mv i
+
+
+{-|
+ - Given a Char vector (i.e. our pattern) we will construct a jump vector out of it. Vector
+ - that will govern our behaviour when we search.
+ -}
+build :: V.Vector Char -> V.Vector Int
+build pat = runST $  do
+  let n = V.length pat
+  mv <- MV.replicate n 0 :: ST s (MV.MVector s Int)
+  -- for ever i call the searchUntil function.
+  _ <- foreachWith [1..n-1] 0 $ searchUntil pat mv
+  V.freeze mv
+
+
+{-|
+ - Given a search string a pattern string and jump table and the index of the pattern we
+ - are considering (0 when invoked) returns weither the pattern is in the search string or not.
+ -
+ - cases:
+ - if we are at end of the pattern then it is present.
+ - if pat[j] == character of search string under consideration then just increment j.
+ - if we failed to match then there are 2 cases
+ -   j is not 0 then we go one index back in our jump table and read the value of j there
+ -   and start matching at that point.
+ -   j is zero we start all over again.
+ -}
+search :: String -> V.Vector Char -> V.Vector Int -> Int -> Bool
+search [] _ jmp j = j == V.length jmp
+search (x:xs) pat jmp j
+  | j == V.length jmp = True
+  | pat V.! j == x = search xs pat jmp (j + 1)
+  | j /= 0 = search (x:xs) pat jmp (jmp V.! (j - 1))
+  | otherwise = search xs pat jmp j
+
+
+{-|
+ - The KMP-string searching algorithm. Given a searchString (possibly infinite) and a pattern
+ - returns "YES" if the pattern exists in the string else "NO". Runs in time O(m + n) where
+ - m is the size of the search string and n is the size of pattern we are searching.
+ -}
+kmp :: String -> String -> String
+kmp str pat =
+  let
+    vecPat = V.fromList pat
+    jmpTable = build vecPat
+  in
+    if search str vecPat jmpTable 0 then "YES" else "NO"
+
+{-|
+ - In 1974, a very fast string searching method was proposed by the name of KMP algorithm with
+ - linear run-time complexity. Your task here is to code this (or any similar) algorithm in a
+ - functional language.
+ - 
+ - Given two strings text and pat, find whether pat exists as a substring in text.
+ - 
+ - Input 
+ - First line will contain an integer, T, which represents total number of test cases. Then T test
+ - cases follow. Each case will contains two lines each containing a string. First line will contain
+ - text while the second line will contain pat.
+ - 
+ - Output 
+ - For each case print YES if pat is a substring of text otherwise NO.
+ - 
+ - Constraints 
+ - 1 ≤ T ≤ 10 
+ - 1 ≤ |pat| ≤ |text| ≤ 100000 
+ - All characters in text and pat will be lowercase latin character ('a'-'z').
+ -}
+mainKMP :: IO ()
+mainKMP =
+  getLine >> getContents >>=
+    putStr . unlines . map (uncurry kmp . (\[x,y] -> (x,y))) . chunksOf 2 . lines
+
 
 -- JOHN AND FENCES --------------------------------------------------------------------------------
 
@@ -697,6 +802,7 @@ functionalStructures =
   , ("listGCD", mainListsAndGCD)
   , ("validBST", mainValidBST)
   , ("prissonTrassport", mainPrissonTransport)
+  , ("substringSearch", mainKMP)
   , ("jhonAndFence", mainFence)
   , ("minRangeQuery", mainMinRQ)
   ]
