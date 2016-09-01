@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -Wall #-}
---{-# OPTIONS_GHC -Werror #-}
+{-# OPTIONS_GHC -Werror #-}
 
 
 module FunctionalStructures
@@ -21,6 +21,7 @@ import Control.Monad
   )
 import Control.Monad.ST (ST, runST)
 import Data.List (sort)
+import Data.Maybe (fromJust)
 
 import qualified Data.Vector.Unboxed as V
 import qualified Data.Vector.Unboxed.Mutable as MV
@@ -794,6 +795,213 @@ mainMinRQ = do
   putStrLn .unlines $ map (show . rangeQ (segTreeFromList as)) qs
 
 
+-- TREE MANAGER -----------------------------------------------------------------------------------
+
+{-| A tree which can have arbitry number of children -}
+data Rose a
+  = NNode a (Roses a)
+  deriving (Show, Read, Eq)
+
+{-| Get the value at the given root node -}
+node :: Rose a -> a
+node (NNode a _) = a
+
+{-| A list of n-ary (Rose tree) -}
+type Roses a =
+  [Rose a]
+
+{-|
+ - N-Ary (Rose) tree zipper.
+ - focus -> Represents the focus point in the Zipper
+ - _left -> left sibling of the focused node.
+ - _right -> right sibling of the focused node.
+ - _ancestors -> all the ancestors of the focused node.
+ - i.e list of (left siblings, parent, right siblings)
+ -}
+data TZipper a = TZipper
+  { focus :: Rose a
+  , _left :: Roses a
+  , _right :: Roses a
+  , _ancestors :: [(Roses a, a, Roses a)]
+  } deriving (Show, Eq)
+
+
+{-| Takes a tree creates a zipper from it which is focused on the root node. -}
+fromTree :: Rose a -> TZipper a
+fromTree t =
+  TZipper t [] [] []
+
+
+{-| Changes the value of the current node to whatever is provided. -}
+changeValue :: a -> TZipper a -> Maybe (TZipper a)
+changeValue x' (TZipper (NNode _ cs) ls rs as) =
+  Just $ TZipper (NNode x' cs) ls rs as
+
+
+{-| Visit the left sibling of the focused node -}
+visitLeft :: TZipper a -> Maybe (TZipper a)
+visitLeft (TZipper _ [] _ _) = Nothing
+visitLeft (TZipper x (l:ls) rs as) =
+  Just $ TZipper l ls (x:rs) as
+
+
+{-| Visit the right sibling of the focused node -}
+visitRight :: TZipper a -> Maybe (TZipper a)
+visitRight (TZipper _ _ [] _) = Nothing 
+visitRight (TZipper x ls (r:rs) as) =
+  Just $ TZipper r (x:ls) rs as 
+
+
+{-| Visits the parent of the currently focused node -}
+visitParent :: TZipper a -> Maybe (TZipper a)
+visitParent (TZipper _ _ _ []) = Nothing
+visitParent (TZipper x ls rs ((la, a, ra):as)) =
+  Just $ TZipper (NNode a (reverse ls ++ [x] ++ rs)) la ra as
+
+
+{-| Visits the nth child -}
+visitChild :: Int -> TZipper a -> Maybe (TZipper a)
+visitChild _ (TZipper (NNode _ []) _ _ _) = Nothing 
+visitChild n (TZipper (NNode a cs) ls rs as) =
+  let
+    (l, c:r) = splitAt (n - 1) cs
+  in
+    Just $ TZipper c (reverse l) r ((ls, a, rs) : as)
+
+
+{-| insert a sibling to the left -}
+insertLeft :: a -> TZipper a -> Maybe (TZipper a)
+insertLeft v (TZipper x ls rs as) =
+  Just $ TZipper x (NNode v [] : ls) rs as
+
+
+{-| insert a sibling to the right -}
+insertRight :: a -> TZipper a -> Maybe (TZipper a)
+insertRight v (TZipper x ls rs as) =
+  Just $ TZipper x ls (NNode v [] : rs) as
+
+
+{-| insert a child into the current node -}
+insertChild :: a -> TZipper a -> Maybe (TZipper a)
+insertChild v (TZipper (NNode a cs) ls rs as) =
+  Just $ TZipper (NNode a (NNode v [] : cs)) ls rs as
+
+
+{-| delete the current node and jump to the parent -}
+deleteCurrent :: TZipper a -> Maybe (TZipper a)
+deleteCurrent (TZipper _ _ _ []) = Nothing
+deleteCurrent (TZipper _ ls rs ((la, a, ra):as)) =
+  Just $ TZipper (NNode a (reverse ls ++ rs)) la ra as
+
+
+{-|
+ - Given a list of operations perform them on the starting tree.
+ -}
+manageTree :: Read a => [String] -> TZipper a -> Maybe [TZipper a]
+manageTree [] _ = Just []
+manageTree (o:ops) t =
+  case words o of
+    ["print"] ->
+      fmap (t :) (manageTree ops t)
+      
+    ["delete"] ->
+      deleteCurrent t >>= manageTree ops
+
+    ["change", v] ->
+      changeValue (read v) t >>= manageTree ops
+      
+    ["visit", "left"] ->
+      visitLeft t >>= manageTree ops
+      
+    ["visit", "right"] ->
+      visitRight t >>= manageTree ops
+      
+    ["visit", "parent"] ->
+      visitParent t >>= manageTree ops
+      
+    ["visit", "child", n] ->
+      visitChild (read n) t >>= manageTree ops
+      
+    ["insert", "left", v] ->
+      insertLeft (read v) t >>= manageTree ops
+      
+    ["insert", "right", v] ->
+      insertRight (read v) t >>= manageTree ops
+      
+    ["insert", "child", v] ->
+      insertChild (read v) t >>= manageTree ops
+      
+    _ -> Nothing
+
+
+-- Helper f : given a list of operation constructs a Rose tree with root (0) then performs
+-- those operations on them and gives the result whenever print was called.
+result :: [String] -> Maybe [Int]
+result ops =
+  map (node . focus) <$> manageTree ops (fromTree (NNode 0 []))
+
+{-|
+ - In this problem you must perform operations on a rooted tree storing integers in each node.
+ - There are several operations to handle:
+ - 
+ - * changeValue() -> Changes the value stored in the current node to .
+ - * print() -> Prints the values stored in the current node.
+ - * visitLeft() -> Sets the current node to be the left sibling of the current node.
+ - * visitRight() -> Sets the current node to be the right sibling of the current node.
+ - * visitParent() -> Sets the current node to be the parent of the current node.
+ - * visitChild(n) -> Sets the current node to be the  child of the current node. Children are
+ -    numbered from left to right starting from .
+ - * insertLeft(x) -> Inserts a new node with value  as the left sibling of the current node.
+ - * insertRight(x) -> Inserts a new node with value  as the right sibling of the current node.
+ - * insertChild(x) -> Inserts a new node as the leftmost child of the current node.
+ - * delete() -> Deletes the current node with the subtree rooted in it and sets the current node
+ -    as a parent of just deleted node.
+ - 
+ - Knowing that the tree initially consists of the root with value 0, your task is to perform
+ - Q consecutive operations.
+ - 
+ - Check the Input Format section for a description of how each operation is given in the input,
+ - and review the Constraints section to clarify which operations are not allowed for the root
+ - node.
+ -
+ - Input Format:
+ - * change x -> changeValue(x)
+ - * print -> print()
+ - * visit left -> visitLeft()
+ - * visit right -> visitRight()
+ - * visit parent -> visitParent()
+ - * visit child x -> visitChild(x)
+ - * insert left x -> insertLeft(x)
+ - * insert right x -> insertRight(x)
+ - * insert child x -> insertChild(x)
+ - * delete -> delete()
+ - 
+ - The first line contains a single integer, Q, denoting the number of operations to perform. The
+ - Q subsequent lines each describe a single operation to perform. The operations are coded as
+ - follows:
+ - 
+ - Constraints:
+ - 1 <= Q <= 10^5
+ - 0 <= x <= 10^6
+ - 1 <= n <= 10
+ - 
+ - It is guaranteed that all operations given as input will be valid.
+ - Invalid operations are:
+ - 
+ - Visiting left/right sibling when there is no such sibling.
+ - Visiting the nth child when there are less than  children.
+ - Deleting the root.
+ - Inserting any sibling of the root.
+ - A single node will never have more than 10 children.
+ - Output Format
+ - 
+ - For each print operation, output a single line with the value in the current node.
+ -}
+mainTreeManager :: IO()
+mainTreeManager =
+  getLine >> getContents >>= putStr . unlines . map show . fromJust . result . lines
+
+
 -- MAIN -------------------------------------------------------------------------------------------
 
 functionalStructures :: [(String, IO ())]
@@ -805,5 +1013,6 @@ functionalStructures =
   , ("substringSearch", mainKMP)
   , ("jhonAndFence", mainFence)
   , ("minRangeQuery", mainMinRQ)
+  , ("treeManager", mainTreeManager)
   ]
 
