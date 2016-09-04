@@ -20,7 +20,7 @@ import Data.Ord (comparing)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BC
 import qualified Data.Maybe as M
-import qualified Data.Set as Set
+import qualified Data.Set as S
 import qualified Data.Vector.Unboxed as UV
 import qualified Data.Vector.Unboxed.Mutable as MUV
 
@@ -35,13 +35,79 @@ factors n =
     lows ++ reverse (map (div n) lows)
 
 
--- HELPERS ---------------------------------------------------------------------------------------
-
 {-|
  - Calculate the lcm of a given list of numbers.
  -}
 lcm' :: [Int] -> Int
 lcm' = foldl1 lcm
+
+
+{-|
+ - Given any list rotate it by given n amount
+ -}
+rotate :: Int -> [a] -> [a]
+rotate n ys =
+  take (length ys) $ drop n (cycle ys)
+
+
+{-|
+ - Generate all iterations of a given list.
+ -}
+rotations :: [a] -> [[a]]
+rotations xs =
+  [ rotate i xs | i <- [1..(length xs)] ]
+
+
+{-|
+ - Break up a number into it's constituent digits
+ -}
+digs :: Integral a => a -> [a]
+digs 0 = []
+digs x =
+  x `mod` 10 : digs (x `div` 10)
+
+
+{-|
+ - Check if the number contains zero
+ -}
+hasZero :: Integral a => a -> Bool
+hasZero =
+  elem 0 . digs
+
+
+{-|
+ - Return a list of numbers while droping from the left
+ -}
+fromLeft :: Integral a => a -> [a]
+fromLeft =
+  takeWhile (> 0) . iterate (`div` 10)
+
+
+{-|
+ - Return a list of numbers while droping the rightmost digit at every step
+ -}
+fromRight :: Integral a => a -> [a]
+fromRight =
+  foldl (\acc x -> ((if null acc then 0 else head acc)*10 + x) : acc) [] . reverse . digs
+
+
+{-|
+ - Genrate an infinite list of prime numbers
+ -}
+primes :: Integral a => [a]
+primes =
+  let
+    isPrime [] _ = error "Huh?"
+    isPrime (p:ps) n =
+      p*p > n || n `rem` p /= 0 && isPrime ps n
+
+    primes' =
+      7 : filter (isPrime primes') (scanl (+) 11 $ cycle [2,4,2,4,6,2,6,4])
+  in
+    2 : 3 : 5 : primes'
+
+
+-- JUMPING BUNNIES -------------------------------------------------------------------------------
 
 {-|
  - Bunnies are very cute animals who likes to jump a lot. Every bunny has his own range of jump.
@@ -68,23 +134,8 @@ mainJumpingBunnies = do
   _ <- readLn :: IO Int
   getLine >>= print . lcm' .  map (read :: String -> Int) . words
 
+
 -- ROTATE STRING ----------------------------------------------------------------------------------
-
-{-|
- - Given any list rotate it by given n amount
- -}
-rotate :: Int -> [a] -> [a]
-rotate n ys =
-  take (length ys) $ drop n (cycle ys)
-
-
-{-|
- - Generate all iterations of a given list.
- -}
-rotations :: [a] -> [[a]]
-rotations xs =
-  [ rotate i xs | i <- [1..(length xs)] ]
-
 
 {-|
  - Scturtle likes strings very much. He is getting bored today, because he has already completed
@@ -112,12 +163,12 @@ mainRotations =
  - Taks a list of orderable items and returns a new list of uniques preserving the first occurences
  - order.
  -}
-reduction :: (Ord a) => Set.Set a -> [a] -> [a]
+reduction :: (Ord a) => S.Set a -> [a] -> [a]
 reduction _ []     = []
 reduction seen (x:xs) =
-  if Set.member x seen
+  if S.member x seen
     then reduction seen xs
-    else x : reduction (Set.insert x seen) xs
+    else x : reduction (S.insert x seen) xs
 
 {-|
  - You are given a string, str, of length N consisting of lowercase letters of alphabet. You have
@@ -126,7 +177,7 @@ reduction seen (x:xs) =
  -}
 mainReduction :: IO ()
 mainReduction =
-  getLine >>= putStrLn . reduction Set.empty
+  getLine >>= putStrLn . reduction S.empty
 
 
 -- HUGE GCD ---------------------------------------------------------------------------------------
@@ -234,7 +285,7 @@ mainMissingNums = do
  -}
 cDivs :: Int -> Int -> Int
 cDivs x y =
-  Set.size . Set.fromList . factors $ gcd x y
+  S.size . S.fromList . factors $ gcd x y
 
 {-|
  - Mario and Luigi earn points in their steps to save the Princess Peach from a dragon. Let's
@@ -318,6 +369,78 @@ mainSubSum = do
   putStr . unlines . map show $ subsetSum as ts
 
 
+-- CAPTIAN PRIME ----------------------------------------------------------------------------------
+
+{-| Set of all the prime numbers less than a million -}
+primeSet :: S.Set Int
+primeSet =
+  S.fromList (takeWhile (< (10^(6 :: Int))) primes)
+
+{-|
+ - Based on the criteria (mentioned in desc of mainCaptianPrime) give roles to various shipmates.
+ -}
+whereYouGo :: S.Set Int -> Int -> String
+whereYouGo ps n
+  | hasZero n = "DEAD"
+  | l && r = "CENTRAL"
+  | l = "RIGHT"
+  | r = "LEFT"
+  | otherwise = "DEAD"
+    where
+      l = all (== True) (map (`S.member` ps) (fromLeft n))
+      r = all (== True) (map (`S.member` ps) (fromRight n))
+
+
+{-|
+ - Captain Prime is going on a trip to Primeland and needs support of his troops to make this
+ - voyage successful. To prevent the wrath of evil spirits, he has to throw out some people from
+ - his troop into the sea. This decision will depend on the identification number of the troop
+ - member. 
+ - 
+ - His ship is divided into three parts: Left, right, and central. Every person on the ship is
+ - assigned an identification number (referred as id), and according to their id they get to work
+ - in one part of the ship, or end up getting thrown out of the ship. 
+ - 
+ - 
+ - A person's fate depends on the following conditions:
+ - 
+ - CENTRAL: He will be working in central part if (a) his id is a prime number, (b) it doesn't
+ - contain 0 as one of the digits, and (c) when the left digits are successively taken off, then
+ - all the resulting numbers are also prime. (d) And same goes for the digits on the right side.
+ - For example person with id 3137 will work in central part, as 3137, {313, 31, 3}, {137, 37, and
+ - 7} are all prime numbers.
+ - 
+ - LEFT: He will be working in left part if (a) his id is a prime number, (b) and doesn't contain
+ - 0 as one of the digits. (c) Also when the left digits are successively taken off, then all the
+ - resulting numbers are prime, but this doesn't hold true for the right digits. For example,
+ - person with id 1367 will work here, since 1367, 367, 67 and 7 are all prime numbers. While 136
+ - is not a prime number, which we get after removing one digit on the right.
+ - 
+ - RIGHT: He will be working on right part if (a) his id is a prime number, (b) and doesn't contain
+ - 0 digit as one of the digits. (c) Also on successively stripping right digits, all the resulting
+ - numbers are prime, but this does not hold true for the left digits. For example, person with id
+ - 2333 belongs to this category, as 2333, 233, 23 and 2 are all prime numbers, while 333 is not a
+ - prime number.
+ - 
+ - DEAD: If a person is not eligible to work anywhere on the ship, then he will be thrown out of
+ - the ship. Sad!
+ - 
+ - Input Format: 
+ - The first line contains T, the number of persons on the ship, followed by the their id numbers
+ - in the next T lines.
+ - 
+ - Output Format: 
+ - Print LEFT, RIGHT, CENTRAL, or DEAD according to the fate of the person on the ship.
+ - 
+ - Constraints: 
+ - 1<= T <= 50
+ - 1 <= id <= 10^6
+ -}
+mainCaptianPrime :: IO ()
+mainCaptianPrime =
+  getLine >> getContents >>= putStr . unlines . map (whereYouGo primeSet . read) . lines
+
+
 -- MAIN -------------------------------------------------------------------------------------------
 
 adhoc :: [(String, IO ())]
@@ -330,5 +453,6 @@ adhoc =
   , ("missingNums", mainMissingNums)
   , ("commonDivisors", mainCommonDivisors)
   , ("subsetSum", mainSubSum)
+  , ("captianPrime", mainCaptianPrime)
   ]
 

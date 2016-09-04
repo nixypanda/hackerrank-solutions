@@ -27,7 +27,9 @@ import qualified Data.Vector.Unboxed as V
 import qualified Data.Vector.Unboxed.Mutable as MV
 
 
+---------------------------------------------------------------------------------------------------
 -- GENERAL HELPERS --------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------
 
 {-|
  - Creates chunks of size k for the given list
@@ -41,7 +43,181 @@ chunksOf k xs = ys : chunksOf k zs
   where (ys, zs) = splitAt k xs
 
 
--- Binary Search Tree --
+{-|
+ - foreachWith takes a list, and a value that can be modified by the function, and
+ - it returns the modified value after mapping the function over the list.  
+ -}
+foreachWith :: (Foldable t, Monad m) => t a -> b -> (a -> b -> m b) -> m b
+foreachWith xs v f =
+  foldM (flip f) v xs
+
+
+-- KNUTH-MORRIS-PRATT SUBSTRING SEARCH ALGORITHM O(m + n) -----------------------------------------
+
+{-|
+ - It is a helper function that takes in a char vector and a mutable vector and two indices
+ - where i represents the present index for which we are serching the jump value and j which
+ - represents the value we will use to fill the jump val.
+ -
+ - if the value at both places is the same then whenever we see the pattern we can safely
+ - go to the next index w.r.t j as the rest is the prefix that will already be matched
+ - abcdax   jmp[i] can be 1.
+ - ^   ^ -> 
+ - j   i    
+ - if pat[j] == pat[i] then jmp[i] = j + 1; i++; j++
+ -
+ - if pat[j] /= pat[i] then we need to start from the top.
+ - if j == 0 then jmp[i] = 0; i++
+ -
+ - if all else fails we will look for the value at one less.
+ - otherwise = j = jmp[j - 1]
+ -}
+searchUntil :: V.Vector Char -> MV.MVector s Int -> Int -> Int -> ST s Int
+searchUntil pat mv i j
+  | pat V.! j == pat V.! i = MV.write mv i (j + 1) >> return (j + 1)
+  | j == 0 = MV.write mv i 0 >> return j
+  | otherwise = MV.read mv (j - 1) >>= searchUntil pat mv i
+
+
+{-|
+ - Given a Char vector (i.e. our pattern) we will construct a jump vector out of it. Vector
+ - that will govern our behaviour when we search.
+ -}
+build :: V.Vector Char -> V.Vector Int
+build pat = runST $  do
+  let n = V.length pat
+  mv <- MV.replicate n 0 :: ST s (MV.MVector s Int)
+  -- for ever i call the searchUntil function.
+  _ <- foreachWith [1..n-1] 0 $ searchUntil pat mv
+  V.freeze mv
+
+
+{-|
+ - Given a search string a pattern string and jump table and the index of the pattern we
+ - are considering (0 when invoked) returns weither the pattern is in the search string or not.
+ -
+ - cases:
+ - if we are at end of the pattern then it is present.
+ - if pat[j] == character of search string under consideration then just increment j.
+ - if we failed to match then there are 2 cases
+ -   j is not 0 then we go one index back in our jump table and read the value of j there
+ -   and start matching at that point.
+ -   j is zero we start all over again.
+ -}
+search :: String -> V.Vector Char -> V.Vector Int -> Int -> Bool
+search [] _ jmp j = j == V.length jmp
+search (x:xs) pat jmp j
+  | j == V.length jmp = True
+  | pat V.! j == x = search xs pat jmp (j + 1)
+  | j /= 0 = search (x:xs) pat jmp (jmp V.! (j - 1))
+  | otherwise = search xs pat jmp j
+
+
+{-|
+ - The KMP-string searching algorithm. Given a searchString (possibly infinite) and a pattern
+ - returns "YES" if the pattern exists in the string else "NO". Runs in time O(m + n) where
+ - m is the size of the search string and n is the size of pattern we are searching.
+ -}
+kmp :: String -> String -> String
+kmp str pat =
+  let
+    vecPat = V.fromList pat
+    jmpTable = build vecPat
+  in
+    if search str vecPat jmpTable 0 then "YES" else "NO"
+
+
+-- UNION-FIND DATA STRUCTURE (WEIGHTED UNION-FIND) ------------------------------------------------
+
+{-|
+ - The UnionFind data type represents a union–find data type (also known as the disjoint-sets data
+ - type. It supports the union and find operations, along with a connected operation for determining
+ - whether two sites are in the same component.
+ -
+ - The union–find data type models connectivity among a set of n sites, named 0 through n - 1.
+ - The is-connected-to relation must be an equivalence relation:
+ -
+ - * Reflexive: p is connected to p.
+ - * Symmetric: If p is connected to q,then q is connected to p.
+ - * Transitive: If p is connected to q and q is connected to r, then p is connected to r.
+ -
+ - An equivalence relation partitions the sites into equivalence classes (or components). In this
+ - case, two sites are in the same component if and only if they are connected. Both sites and
+ - components are identified with integers between 0 and n - 1.  Initially, there are n components,
+ - with each site in its own component.  The component identifier of a component (also known as the
+ - root, canonical element, leader, or set representative) is one of the sites in the component,
+ - two sites have the same component identifier if and only if they are in the same component.
+ -
+ - * union(p, q) adds a connection between the two sites p and q. If p and q are in different
+ -   components, then it replaces these two components with a new component that is the union of the
+ -   two.
+ - * find(p) returns the component identifier of the component containing p.
+ - * connected(p, q) returns true if both p and q are in the same component, and false otherwise.
+ -
+ - This implementation uses weighted quick union by size (without path compression).
+ -}
+data UnionFind s = UnionFind
+  { ids :: MV.MVector s Int
+  , szs :: MV.MVector s Int
+  }
+
+{-|
+ - Initialize union-find data structure with n sites. 0 through (n - 1). Each site is initially in
+ - it's own component.
+ -}
+-- newListArray: array indexed from 0 to n - 1 containing elements of the provided list
+-- newArray: create array with the provided value (in every place).
+newUF :: Int -> ST s (UnionFind s)
+newUF n =
+  liftM2 UnionFind (V.thaw $ V.fromList [0..n - 1]) (MV.replicate n 0)
+
+{-|
+ - Returns the component identifier for the component containing the passed site.
+ -}
+-- get the value ar index then check if both are equal, Equality => the index is root
+-- follow through the nodes until root is found
+find :: UnionFind s -> Int -> ST s Int
+find uf p =
+  MV.read (ids uf) p >>= (\i -> if i /= p then find uf i else return i)
+
+
+{-|
+ - checks if the given two sites are in the same component.
+ -}
+-- two sites are connected if they share the root.
+connected :: UnionFind s -> Int -> Int -> ST s Bool
+connected uf p q =
+  liftM2 (==) (find uf p) (find uf q)
+
+
+{-|
+ - Merges the component containing component containing the site p(or q) with the component
+ - containing site q(or p). The smaller component is merged into the larger one.
+ -}
+union :: UnionFind s -> Int -> Int -> ST s ()
+union uf p q = do
+  -- get both roots
+  rootP <- find uf p
+  rootQ <- find uf q
+  -- if they are same do nothing
+  when (rootP /= rootQ) $ do
+    -- otherwise get size of both the roots
+    szP <- MV.read (szs uf) rootP
+    szQ <- MV.read (szs uf) rootQ
+    -- merge the smaller into the larger
+    if szP < szQ
+      then do
+        MV.write (ids uf) rootP rootQ
+        MV.write (szs uf) rootP 0
+        MV.write (szs uf) rootQ (szP + szQ)
+      else do
+        MV.write (ids uf) rootQ rootP
+        MV.write (szs uf) rootQ 0
+        MV.write (szs uf) rootP (szP + szQ)
+
+
+
+-- BINARY SEARCH TREE -----------------------------------------------------------------------------
 
 {-|
  - A tree is either an empty tree or it's an element that contains some value and two trees.
@@ -97,41 +273,111 @@ inorder (Node y left right) =
   inorder left ++ [y] ++ inorder right
 
 
-{-|
- - Preety prints the given tree onto the screen
- - *Main> let tree = fromList [1..10]
- - *Main> putStr $ showTree tree
- -  7*
- -  +- 5
- -  |  +- 3*
- -  |  |  +- 2
- -  |  |  |  +- 1*
- -  |  |  `- 4
- -  |  `- 6
- -  `- 9
- -     +- 8
- -     `- 10
- -
- -}
--- showTree :: Show a => Tree a -> String
--- showTree Empty = "Empty root."
--- showTree (Node node left right) =
---   unlines (ppHelper (Node node left right))
---
---     where
---       pad :: String -> String -> [String] -> [String]
---       pad first rest =
---         zipWith (++) (first : repeat rest)
---
---       ppSubtree :: Show a => Tree a -> Tree a -> [String]
---       ppSubtree left right =
---         pad "+- " "|  " (ppHelper left) ++ pad "`- " "   " (ppHelper right)
---
---       ppHelper :: Show a => Tree a -> [String]
---       ppHelper Empty = []
---       ppHelper (Node node left right) =
---         show node : ppSubtree left right
+-- N-ARY TREE (ROSE TREE) -------------------------------------------------------------------------
 
+{-| A tree which can have arbitry number of children -}
+data Rose a
+  = NNode a (Roses a)
+  deriving (Show, Read, Eq)
+
+{-| A list of n-ary (Rose tree) -}
+type Roses a =
+  [Rose a]
+
+{-| Get the value at the given root node -}
+node :: Rose a -> a
+node (NNode a _) = a
+
+
+-- N-ARY TREE ZIPPER (ROSE TREE ZIPPER) -----------------------------------------------------------
+
+{-|
+ - N-Ary (Rose) tree zipper.
+ - focus -> Represents the focus point in the Zipper
+ - _left -> left sibling of the focused node.
+ - _right -> right sibling of the focused node.
+ - _ancestors -> all the ancestors of the focused node.
+ - i.e list of (left siblings, parent, right siblings)
+ -}
+data TZipper a = TZipper
+  { focus :: Rose a
+  , _left :: Roses a
+  , _right :: Roses a
+  , _ancestors :: [(Roses a, a, Roses a)]
+  } deriving (Show, Eq)
+
+
+{-| Takes a tree creates a zipper from it which is focused on the root node. -}
+fromTree :: Rose a -> TZipper a
+fromTree t =
+  TZipper t [] [] []
+
+
+{-| Changes the value of the current node to whatever is provided. -}
+changeValue :: a -> TZipper a -> Maybe (TZipper a)
+changeValue x' (TZipper (NNode _ cs) ls rs as) =
+  Just $ TZipper (NNode x' cs) ls rs as
+
+
+{-| Visit the left sibling of the focused node -}
+visitLeft :: TZipper a -> Maybe (TZipper a)
+visitLeft (TZipper _ [] _ _) = Nothing
+visitLeft (TZipper x (l:ls) rs as) =
+  Just $ TZipper l ls (x:rs) as
+
+
+{-| Visit the right sibling of the focused node -}
+visitRight :: TZipper a -> Maybe (TZipper a)
+visitRight (TZipper _ _ [] _) = Nothing 
+visitRight (TZipper x ls (r:rs) as) =
+  Just $ TZipper r (x:ls) rs as 
+
+
+{-| Visits the parent of the currently focused node -}
+visitParent :: TZipper a -> Maybe (TZipper a)
+visitParent (TZipper _ _ _ []) = Nothing
+visitParent (TZipper x ls rs ((la, a, ra):as)) =
+  Just $ TZipper (NNode a (reverse ls ++ [x] ++ rs)) la ra as
+
+
+{-| Visits the nth child -}
+visitChild :: Int -> TZipper a -> Maybe (TZipper a)
+visitChild _ (TZipper (NNode _ []) _ _ _) = Nothing 
+visitChild n (TZipper (NNode a cs) ls rs as) =
+  let
+    (l, c:r) = splitAt (n - 1) cs
+  in
+    Just $ TZipper c (reverse l) r ((ls, a, rs) : as)
+
+
+{-| insert a sibling to the left -}
+insertLeft :: a -> TZipper a -> Maybe (TZipper a)
+insertLeft v (TZipper x ls rs as) =
+  Just $ TZipper x (NNode v [] : ls) rs as
+
+
+{-| insert a sibling to the right -}
+insertRight :: a -> TZipper a -> Maybe (TZipper a)
+insertRight v (TZipper x ls rs as) =
+  Just $ TZipper x ls (NNode v [] : rs) as
+
+
+{-| insert a child into the current node -}
+insertChild :: a -> TZipper a -> Maybe (TZipper a)
+insertChild v (TZipper (NNode a cs) ls rs as) =
+  Just $ TZipper (NNode a (NNode v [] : cs)) ls rs as
+
+
+{-| delete the current node and jump to the parent -}
+deleteCurrent :: TZipper a -> Maybe (TZipper a)
+deleteCurrent (TZipper _ _ _ []) = Nothing
+deleteCurrent (TZipper _ ls rs ((la, a, ra):as)) =
+  Just $ TZipper (NNode a (reverse ls ++ rs)) la ra as
+
+
+---------------------------------------------------------------------------------------------------
+-- SOLUTIONS --------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------
 
 -- SWAP NODES -------------------------------------------------------------------------------------
 
@@ -371,93 +617,6 @@ mainListsAndGCD = do
 -- PRISON TRANSPORT -------------------------------------------------------------------------------
 
 {-|
- - The UnionFind data type represents a union–find data type (also known as the disjoint-sets data
- - type. It supports the union and find operations, along with a connected operation for determining
- - whether two sites are in the same component.
- -
- - The union–find data type models connectivity among a set of n sites, named 0 through n - 1.
- - The is-connected-to relation must be an equivalence relation:
- -
- - * Reflexive: p is connected to p.
- - * Symmetric: If p is connected to q,then q is connected to p.
- - * Transitive: If p is connected to q and q is connected to r, then p is connected to r.
- -
- - An equivalence relation partitions the sites into equivalence classes (or components). In this
- - case, two sites are in the same component if and only if they are connected. Both sites and
- - components are identified with integers between 0 and n - 1.  Initially, there are n components,
- - with each site in its own component.  The component identifier of a component (also known as the
- - root, canonical element, leader, or set representative) is one of the sites in the component,
- - two sites have the same component identifier if and only if they are in the same component.
- -
- - * union(p, q) adds a connection between the two sites p and q. If p and q are in different
- -   components, then it replaces these two components with a new component that is the union of the
- -   two.
- - * find(p) returns the component identifier of the component containing p.
- - * connected(p, q) returns true if both p and q are in the same component, and false otherwise.
- -
- - This implementation uses weighted quick union by size (without path compression).
- -}
-data UnionFind s = UnionFind
-  { ids :: MV.MVector s Int
-  , szs :: MV.MVector s Int
-  }
-
-{-|
- - Initialize union-find data structure with n sites. 0 through (n - 1). Each site is initially in
- - it's own component.
- -}
--- newListArray: array indexed from 0 to n - 1 containing elements of the provided list
--- newArray: create array with the provided value (in every place).
-newUF :: Int -> ST s (UnionFind s)
-newUF n =
-  liftM2 UnionFind (V.thaw $ V.fromList [0..n - 1]) (MV.replicate n 0)
-
-{-|
- - Returns the component identifier for the component containing the passed site.
- -}
--- get the value ar index then check if both are equal, Equality => the index is root
--- follow through the nodes until root is found
-find :: UnionFind s -> Int -> ST s Int
-find uf p =
-  MV.read (ids uf) p >>= (\i -> if i /= p then find uf i else return i)
-
-
-{-|
- - checks if the given two sites are in the same component.
- -}
--- two sites are connected if they share the root.
-connected :: UnionFind s -> Int -> Int -> ST s Bool
-connected uf p q =
-  liftM2 (==) (find uf p) (find uf q)
-
-
-{-|
- - Merges the component containing component containing the site p(or q) with the component
- - containing site q(or p). The smaller component is merged into the larger one.
- -}
-union :: UnionFind s -> Int -> Int -> ST s ()
-union uf p q = do
-  -- get both roots
-  rootP <- find uf p
-  rootQ <- find uf q
-  -- if they are same do nothing
-  when (rootP /= rootQ) $ do
-    -- otherwise get size of both the roots
-    szP <- MV.read (szs uf) rootP
-    szQ <- MV.read (szs uf) rootQ
-    -- merge the smaller into the larger
-    if szP < szQ
-      then do
-        MV.write (ids uf) rootP rootQ
-        MV.write (szs uf) rootP 0
-        MV.write (szs uf) rootQ (szP + szQ)
-      else do
-        MV.write (ids uf) rootQ rootP
-        MV.write (szs uf) rootQ 0
-        MV.write (szs uf) rootP (szP + szQ)
-
-
-{-|
  - Given an integer n and a list of tuples creates a union-find data structure of size n and
  - performs union operations based on the entries for all the tuples in the list, then returns
  - a list containing the sizes of the components.
@@ -527,86 +686,6 @@ mainPrissonTransport = do
 
 -- SUBSTRING SEARCH -------------------------------------------------------------------------------
   
-{-|
- - foreachWith takes a list, and a value that can be modified by the function, and
- - it returns the modified value after mapping the function over the list.  
- -}
-foreachWith :: (Foldable t, Monad m) => t a -> b -> (a -> b -> m b) -> m b
-foreachWith xs v f =
-  foldM (flip f) v xs
-
-
-{-|
- - It is a helper function that takes in a char vector and a mutable vector and two indices
- - where i represents the present index for which we are serching the jump value and j which
- - represents the value we will use to fill the jump val.
- -
- - if the value at both places is the same then whenever we see the pattern we can safely
- - go to the next index w.r.t j as the rest is the prefix that will already be matched
- - abcdax   jmp[i] can be 1.
- - ^   ^ -> 
- - j   i    
- - if pat[j] == pat[i] then jmp[i] = j + 1; i++; j++
- -
- - if pat[j] /= pat[i] then we need to start from the top.
- - if j == 0 then jmp[i] = 0; i++
- -
- - if all else fails we will look for the value at one less.
- - otherwise = j = jmp[j - 1]
- -}
-searchUntil :: V.Vector Char -> MV.MVector s Int -> Int -> Int -> ST s Int
-searchUntil pat mv i j
-  | pat V.! j == pat V.! i = MV.write mv i (j + 1) >> return (j + 1)
-  | j == 0 = MV.write mv i 0 >> return j
-  | otherwise = MV.read mv (j - 1) >>= searchUntil pat mv i
-
-
-{-|
- - Given a Char vector (i.e. our pattern) we will construct a jump vector out of it. Vector
- - that will govern our behaviour when we search.
- -}
-build :: V.Vector Char -> V.Vector Int
-build pat = runST $  do
-  let n = V.length pat
-  mv <- MV.replicate n 0 :: ST s (MV.MVector s Int)
-  -- for ever i call the searchUntil function.
-  _ <- foreachWith [1..n-1] 0 $ searchUntil pat mv
-  V.freeze mv
-
-
-{-|
- - Given a search string a pattern string and jump table and the index of the pattern we
- - are considering (0 when invoked) returns weither the pattern is in the search string or not.
- -
- - cases:
- - if we are at end of the pattern then it is present.
- - if pat[j] == character of search string under consideration then just increment j.
- - if we failed to match then there are 2 cases
- -   j is not 0 then we go one index back in our jump table and read the value of j there
- -   and start matching at that point.
- -   j is zero we start all over again.
- -}
-search :: String -> V.Vector Char -> V.Vector Int -> Int -> Bool
-search [] _ jmp j = j == V.length jmp
-search (x:xs) pat jmp j
-  | j == V.length jmp = True
-  | pat V.! j == x = search xs pat jmp (j + 1)
-  | j /= 0 = search (x:xs) pat jmp (jmp V.! (j - 1))
-  | otherwise = search xs pat jmp j
-
-
-{-|
- - The KMP-string searching algorithm. Given a searchString (possibly infinite) and a pattern
- - returns "YES" if the pattern exists in the string else "NO". Runs in time O(m + n) where
- - m is the size of the search string and n is the size of pattern we are searching.
- -}
-kmp :: String -> String -> String
-kmp str pat =
-  let
-    vecPat = V.fromList pat
-    jmpTable = build vecPat
-  in
-    if search str vecPat jmpTable 0 then "YES" else "NO"
 
 {-|
  - In 1974, a very fast string searching method was proposed by the name of KMP algorithm with
@@ -796,103 +875,6 @@ mainMinRQ = do
 
 
 -- TREE MANAGER -----------------------------------------------------------------------------------
-
-{-| A tree which can have arbitry number of children -}
-data Rose a
-  = NNode a (Roses a)
-  deriving (Show, Read, Eq)
-
-{-| Get the value at the given root node -}
-node :: Rose a -> a
-node (NNode a _) = a
-
-{-| A list of n-ary (Rose tree) -}
-type Roses a =
-  [Rose a]
-
-{-|
- - N-Ary (Rose) tree zipper.
- - focus -> Represents the focus point in the Zipper
- - _left -> left sibling of the focused node.
- - _right -> right sibling of the focused node.
- - _ancestors -> all the ancestors of the focused node.
- - i.e list of (left siblings, parent, right siblings)
- -}
-data TZipper a = TZipper
-  { focus :: Rose a
-  , _left :: Roses a
-  , _right :: Roses a
-  , _ancestors :: [(Roses a, a, Roses a)]
-  } deriving (Show, Eq)
-
-
-{-| Takes a tree creates a zipper from it which is focused on the root node. -}
-fromTree :: Rose a -> TZipper a
-fromTree t =
-  TZipper t [] [] []
-
-
-{-| Changes the value of the current node to whatever is provided. -}
-changeValue :: a -> TZipper a -> Maybe (TZipper a)
-changeValue x' (TZipper (NNode _ cs) ls rs as) =
-  Just $ TZipper (NNode x' cs) ls rs as
-
-
-{-| Visit the left sibling of the focused node -}
-visitLeft :: TZipper a -> Maybe (TZipper a)
-visitLeft (TZipper _ [] _ _) = Nothing
-visitLeft (TZipper x (l:ls) rs as) =
-  Just $ TZipper l ls (x:rs) as
-
-
-{-| Visit the right sibling of the focused node -}
-visitRight :: TZipper a -> Maybe (TZipper a)
-visitRight (TZipper _ _ [] _) = Nothing 
-visitRight (TZipper x ls (r:rs) as) =
-  Just $ TZipper r (x:ls) rs as 
-
-
-{-| Visits the parent of the currently focused node -}
-visitParent :: TZipper a -> Maybe (TZipper a)
-visitParent (TZipper _ _ _ []) = Nothing
-visitParent (TZipper x ls rs ((la, a, ra):as)) =
-  Just $ TZipper (NNode a (reverse ls ++ [x] ++ rs)) la ra as
-
-
-{-| Visits the nth child -}
-visitChild :: Int -> TZipper a -> Maybe (TZipper a)
-visitChild _ (TZipper (NNode _ []) _ _ _) = Nothing 
-visitChild n (TZipper (NNode a cs) ls rs as) =
-  let
-    (l, c:r) = splitAt (n - 1) cs
-  in
-    Just $ TZipper c (reverse l) r ((ls, a, rs) : as)
-
-
-{-| insert a sibling to the left -}
-insertLeft :: a -> TZipper a -> Maybe (TZipper a)
-insertLeft v (TZipper x ls rs as) =
-  Just $ TZipper x (NNode v [] : ls) rs as
-
-
-{-| insert a sibling to the right -}
-insertRight :: a -> TZipper a -> Maybe (TZipper a)
-insertRight v (TZipper x ls rs as) =
-  Just $ TZipper x ls (NNode v [] : rs) as
-
-
-{-| insert a child into the current node -}
-insertChild :: a -> TZipper a -> Maybe (TZipper a)
-insertChild v (TZipper (NNode a cs) ls rs as) =
-  Just $ TZipper (NNode a (NNode v [] : cs)) ls rs as
-
-
-{-| delete the current node and jump to the parent -}
-deleteCurrent :: TZipper a -> Maybe (TZipper a)
-deleteCurrent (TZipper _ _ _ []) = Nothing
-deleteCurrent (TZipper _ ls rs ((la, a, ra):as)) =
-  Just $ TZipper (NNode a (reverse ls ++ rs)) la ra as
-
 
 {-|
  - Given a list of operations perform them on the starting tree.

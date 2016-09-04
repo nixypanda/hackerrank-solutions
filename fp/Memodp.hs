@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -Wall #-}
-{-# OPTIONS_GHC -Werror #-}
+-- {-# OPTIONS_GHC -Werror #-}
 
 module MemoDP
   ( memodp
@@ -10,8 +10,10 @@ module MemoDP
   where
 
 
-import qualified Data.Vector as Vec
+import Control.Monad.ST (ST, runST)
 import Data.Vector ((!)) 
+import qualified Data.Vector as V
+import qualified Data.Vector.Mutable as MV
 
 
 -- HELPERS ----------------------------------------------------------------------------------------
@@ -49,9 +51,9 @@ binarySearchTrees = iterate trees [1, 1]
     trees xs = foldr modadd 0 (zipWith modmult xs (reverse xs)) : xs
 
 
-binarySearchTrees' :: Vec.Vector Integer
+binarySearchTrees' :: V.Vector Integer
 binarySearchTrees' =
-  Vec.fromList $ reverse (binarySearchTrees !! 1000)
+  V.fromList $ reverse (binarySearchTrees !! 1000)
 
 {-|
  - A binary tree is a tree which is characterized by any of the following properties:
@@ -178,9 +180,9 @@ pascal =
 
 
 -- | Pascal triangle with 1001 rows for easier lookup
-pascal' :: Vec.Vector (Vec.Vector Integer)
+pascal' :: V.Vector (V.Vector Integer)
 pascal' =
-  Vec.fromList $ take 1001 $ map Vec.fromList pascal
+  V.fromList $ take 1001 $ map V.fromList pascal
 
 
 {-|
@@ -262,7 +264,83 @@ mainExpressions :: IO ()
 mainExpressions =
   getLine >> getLine >>= putStrLn . divBy101 . map read . words
 
----------------------------------------------------------------------------------------------------
+
+-- DICE PATHS -------------------------------------------------------------------------------------
+
+{-| The direction in which the die can e rolled. -}
+data Direction
+  = RollRight 
+  | RollDown
+  deriving (Show)
+
+
+{-| The maxscore with the given number facing upside. -}
+data Score = Score
+  { one :: Int
+  , two :: Int
+  , three :: Int
+  , four :: Int
+  , five :: Int
+  , six :: Int
+  } deriving (Show)
+
+
+{-| The 6-tuple representing a Die -}
+type Die =
+  (Int, Int, Int, Int, Int, Int)
+
+type Grid s =
+  MV.MVector s Score
+
+{-|
+ - Creates a new 2-d mutable vector that will hold scores (max-possible) at every combination of
+ - valid row column pairs.
+ -}
+newGrid :: Int -> Int -> ST s (Grid s)
+newGrid r c =
+  MV.replicate (r * c) noScore
+
+
+-- fillRightsInitial :: ST s (Grid s) -> Int -> ST s (Grid s)
+-- fillRightsInitial g l = do
+--   g' <- g
+--   forM_ (zip [1..l] (iterate (rotate RollRight) initialConfig)) $ \(i, dc) -> do
+--     MV.write g' i (noScore {top = (fst dc)})
+--   return g'
+
+
+dp = do
+  g <- newGrid 60 60
+  MV.write g 0 initialScore
+  return g
+
+
+{-| The score at (1, 1) -}
+initialScore :: Score
+initialScore =
+  Score 1 0 0 0 0 0
+
+noScore :: Score
+noScore =
+  Score 0 0 0 0 0 0
+
+initialConfig :: Die
+initialConfig =
+  (1, 6, 3, 4, 2, 5)
+
+
+{-| The function which will take in a die and a direction a give a die rotated in that direction -}
+rotate :: Direction -> Die -> Die
+rotate RollDown (top, bottom, left, right, front, back)  = (front, back, left, right, bottom, top)
+rotate RollRight (top, bottom, left, right, front, back) = (right, left, top, bottom, front, back)
+
+
+mainDice :: IO ()
+mainDice = 
+  getLine >> getContents >>=
+    print . map ((\[x, y] -> (x, y)) . map (read :: String -> Int) . words) . lines
+
+-- MAIN -------------------------------------------------------------------------------------------
 
 memodp :: [(String, IO ())]
 memodp =
